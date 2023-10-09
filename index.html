@@ -1,0 +1,449 @@
+<html>
+
+<head>
+    <title>USGS地震情報マップ</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css' />
+    <script src='https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js'></script>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-overlay {
+            font: bold 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            position: absolute;
+            width: 170px;
+            bottom: 20px;
+            left: 0;
+            padding: 10px;
+        }
+
+        .map-overlay .map-overlay-inner {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .map-overlay label {
+            display: block;
+            margin: 0 0 0px;
+            font-size: 12px;
+            top: 100px;
+            left: 10px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .map-overlay input {
+            background-color: transparent;
+            display: inline-block;
+            width: 100%;
+            position: relative;
+            margin: 0;
+            cursor: ew-resize;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content {
+            padding: 8px 10px;
+            font: 12px/14px Arial, Helvetica, sans-serif;
+            color: black;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.9);
+            border-radius: 5px;
+            width: 280px;
+            height: 170px;
+            overflow: scroll;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .shinouchimei-title {
+            color: red;
+            font-size: larger;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .quake-info th {
+            width: 100px;
+        }
+
+        /* 1列目 (左側) を右寄せにする */
+        .maplibregl-popup .maplibregl-popup-content .quake-info td:nth-child(1) {
+            text-align: right;
+            width: 100px;
+            white-space: nowrap;
+            /* 折り返しを防ぐ */
+        }
+
+        /* 2列目 (右側) のセルの幅を広げる */
+        .maplibregl-popup .maplibregl-popup-content .quake-info td:nth-child(2) {
+            text-align: left;
+            width: 150px;
+            white-space: nowrap;
+            /* 折り返しを防ぐ */
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .quake-info b {
+            text-align: right;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .quake-info,
+        .maplibregl-popup .maplibregl-popup-content .quake-info th,
+        .maplibregl-popup .maplibregl-popup-content .quake-info td {
+            font: 12px/14px Arial, Helvetica, sans-serif;
+        }
+
+        #geojsonSelector {
+            padding: 3px 4px;
+            font: 12px/14px Arial, Helvetica, sans-serif;
+            color: black;
+            background: white;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            /*width: fit-content;*/
+            width: 110px;
+            left: 10px;
+            position: absolute;
+            top: 5px;
+            z-index: 1;
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 50px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            padding: 10px;
+            position: absolute;
+            right: 10px;
+            z-index: 1;
+            line-height: 16px;
+            height: 260px;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+        }
+
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 15px;
+            margin-right: 10px;
+            width: 15px;
+            color: black;
+        }
+
+        .circle-depth {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .circle-container {
+            display: block;
+        }
+
+        .circle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid red;
+            border-radius: 50%;
+            background-color: transparent;
+        }
+
+        .circle.small {
+            width: 8px;
+            height: 8px;
+        }
+
+        .circle.medium {
+            width: 16px;
+            height: 16px;
+        }
+
+        .circle.large {
+            width: 40px;
+            height: 40px;
+        }
+
+        .circle-text {
+            font-size: 12px;
+            position: relative;
+            color: black;
+        }
+
+        .circle.large .circle-text {
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <!-- プルダウンの追加 -->
+    <select id="geojsonSelector" onchange="SelectGeoJSON()">
+        <option value="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson">Past 30 Days
+        </option>
+        <option value="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson">Past 7 Days</option>
+        <option value="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson">Past Day</option>
+        <option value="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson">Past Hour</option>
+    </select>
+    <div id='legend' class='legend'>
+        <h4>Depth</h4>
+        <div class="circle-depth" style='background-color: #FF0000;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">20km未満</span><br>
+        <div class="circle-depth" style='background-color: #FF7F00;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">40km未満</span><br>
+        <div class="circle-depth" style='background-color: #FFFF00;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">80km未満</span><br>
+        <div class="circle-depth" style='background-color: #00FF00;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">100km未満</span><br>
+        <div class="circle-depth" style='background-color: #00FFFF;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">150km未満</span><br>
+        <div class="circle-depth" style='background-color: #0000FF;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">300km未満</span><br>
+        <div class="circle-depth" style='background-color: #7F00FF;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">300km以上</span><br><br>
+        <h4>Magnitude</h4>
+        <div class="circle-container">
+            <div class="circle small"></div>
+            <span class="circle-text" style="display: inline-block; margin-left: 5px;">M3</span><br>
+            <div class="circle medium"></div>
+            <span class="circle-text" style="display: inline-block; margin-left: 5px;">M4</span><br>
+            <div class="circle large"></div>
+            <span class="circle-text" style="display: inline-block; margin-left: 5px;">M5</span><br>
+        </div>
+    </div>
+    <script type="text/javascript">
+        // マップの初期化
+        const map = new maplibregl.Map({
+            container: 'map',
+            // style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            style: {
+                version: 8,
+                sources: {
+                    'usgs-wmts-source': {
+                        'type': 'raster',
+                        'tiles': [
+                            'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/WMTS/tile/1.0.0/USGSImageryTopo/default/default028mm/{z}/{y}/{x}'
+                        ],
+                        'tileSize': 256,
+                        attribution: '<a href="https://basemap.nationalmap.gov/arcgis/rest/services">The National Map courtesy of the U.S. Geological Survey</a>'
+                    }
+                },
+                layers: [
+                    {
+                        'id': 'usgs-wmts-layer',
+                        'type': 'raster',
+                        'source': 'usgs-wmts-source'
+                    }
+                ]
+            },
+            center: [137.65, 37.02],
+            zoom: 4.31,
+            minZoom: 1,
+            maxZoom: 23,
+            pitch: 0,
+            bearing: 0,
+            hash: true,
+            attributionControl: false
+        });
+
+        // ズーム・回転
+        map.addControl(new maplibregl.NavigationControl());
+
+        // フルスクリーンモードのオンオフ
+        map.addControl(new maplibregl.FullscreenControl());
+
+        // 現在位置表示
+        map.addControl(new maplibregl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: false
+            },
+            fitBoundsOptions: { maxZoom: 18 },
+            trackUserLocation: true,
+            showUserLocation: true
+        }));
+
+        // スケール表示
+        map.addControl(new maplibregl.ScaleControl({
+            maxWidth: 200,
+            unit: 'metric'
+        }));
+
+        // Attributionを折りたたみ表示
+        map.addControl(new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution: '（<a href="https://twitter.com/shi__works" target="_blank">Twitter</a> | <a href="https://github.com/shi-works/USGS-Earthquake-Map-on-MapLibre-GL-JS" target="_blank">Github</a>）'
+        }));
+
+        // USGSのデータを取得して加工する関数
+        function fetchAndAddDepthToUSGSData(url, callback) {
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    data.features.forEach(feature => {
+                        const depth = feature.geometry.coordinates[2];  // 3番目の要素が深さ
+                        feature.properties.depth = depth;  // propertiesにdepthを設定
+                    });
+                    callback(data);  // 加工後のデータをコールバック関数に渡す
+                });
+        }
+
+        map.on('load', function () {
+            // 初期データのロード
+            fetchAndAddDepthToUSGSData('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson', addDataToMap);
+        });
+
+        function addDataToMap(processedData) {
+            if (map.getSource("usgs-earthquake")) {
+                map.removeLayer('usgs-earthquake-points');
+                map.removeSource('usgs-earthquake');
+            }
+
+            // ソースを追加
+            map.addSource("usgs-earthquake", {
+                type: "geojson",
+                data: processedData,
+                attribution: '<a href="https://www.usgs.gov/programs/earthquake-hazards/earthquakes">Earthquakes courtesy of the U.S. Geological Survey</a>'
+            });
+
+            // レイヤの追加
+            map.addLayer({
+                'id': 'usgs-earthquake-points',
+                'type': 'circle',
+                'source': 'usgs-earthquake',
+                minzoom: 1,
+                maxzoom: 23,
+                'paint': {
+                    'circle-stroke-color': [
+                        "step",
+                        ["get", "depth"],
+                        "#FF0000",  // 20km未満
+                        20, "#FF7F00",  // 40km未満
+                        40, "#FFFF00",  // 80km未満
+                        80, "#00FF00",  // 100km未満
+                        100, "#00FFFF",  // 150km未満
+                        150, "#0000FF",  // 300km未満
+                        300, "#7F00FF",  // 300km以上
+                    ],
+                    'circle-stroke-width': 1.5,
+                    // 'circle-color': "rgba(0 ,0 ,0 ,0)",
+                    'circle-color': [
+                        "step",
+                        ["get", "depth"],
+                        "rgba(255, 0, 0, 0.2)",         // 20km未満
+                        20, "rgba(255, 127, 0, 0.2)",   // 40km未満
+                        40, "rgba(255, 255, 0, 0.2)",   // 80km未満
+                        80, "rgba(0, 255, 0, 0.2)",     // 100km未満
+                        100, "rgba(0, 255, 255, 0.2)",  // 150km未満
+                        150, "rgba(0, 0, 255, 0.2)",    // 300km未満
+                        300, "rgba(127, 0, 255, 0.2)",  // 300km以上
+                    ],
+                    'circle-radius': [
+                        "interpolate",
+                        ["linear"],
+                        ["get", "mag"],
+                        1, 2,
+                        3, 4,
+                        4, 8,
+                        5, 20,
+                        6, 40,
+                        7, 60,
+                        8, 80,
+                        9, 100
+                    ]
+                }
+
+            });
+        }
+
+        // プルダウンでGeoJSONのURLを更新する関数
+        function SelectGeoJSON() {
+            const selectedUrl = document.getElementById('geojsonSelector').value;
+            console.log(selectedUrl);
+            fetchAndAddDepthToUSGSData(selectedUrl, addDataToMap);
+        }
+
+        // クリック時のポップアップ表示
+        map.on('click', 'usgs-earthquake-points', (e) => {
+            var lng = e.features[0].geometry.coordinates[0];
+            var lat = e.features[0].geometry.coordinates[1];
+            var title = e.features[0].properties['title'];
+            var place = e.features[0].properties['place'];
+            var time = e.features[0].properties['time'];
+
+            // UTCの日時
+            var utcDate = new Date(time);
+
+            // JSTの日時
+            var jstDate = new Date(time + 9 * 60 * 60 * 1000);
+
+            function formatDate(date) {
+                var year = date.getUTCFullYear();
+                var month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+                var day = date.getUTCDate().toString().padStart(2, '0');
+                var hours = date.getUTCHours().toString().padStart(2, '0');
+                var minutes = date.getUTCMinutes().toString().padStart(2, '0');
+                var seconds = date.getUTCSeconds().toString().padStart(2, '0');
+
+                return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+            }
+
+            var utcString = formatDate(utcDate);
+            var jstString = formatDate(jstDate);
+
+            var depth = e.features[0].properties['depth'];
+            var mag = e.features[0].properties['mag'];
+            var url = e.features[0].properties['url'];
+
+            new maplibregl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(
+                    '<b class="shinouchimei-title">' + title + '</b>' + '<br>' +
+                    '<table class="quake-info">' +
+                    '<tr>' +
+                    '<th></th>' +
+                    '<th></th>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>震源：</td>' +
+                    '<td><b>' + place + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>発生日時(UTC)：</td>' +
+                    '<td><b>' + utcString + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>発生日時(JST)：</td>' +
+                    '<td><b>' + jstString + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>深さ：</td>' +
+                    '<td><b>' + depth + ' km' + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>M：</td>' +
+                    '<td><b>' + mag + '</b></td>' +
+                    '</tr>' +
+                    '</table>' +
+                    '<a href="' + url + '" target="_blank" class="jma-link">🔎Detail(USGS web site)</a>' + '<br>' +
+                    '<a href="https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja" + '" target="_blank" class="google-maps-link">🌎Google Maps</a>'
+                )
+                .addTo(map);
+        });
+
+    </script>
+</body>
+
+</html>
