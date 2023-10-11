@@ -19,7 +19,7 @@
         .map-overlay {
             font: bold 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
             position: absolute;
-            width: 170px;
+            width: 220px;
             bottom: 20px;
             left: 0;
             padding: 10px;
@@ -224,31 +224,17 @@
             <span class="circle-text" style="display: inline-block; margin-left: 5px;">M5</span><br>
         </div>
     </div>
+    <div class="map-overlay top">
+        <div class="map-overlay-inner">
+            <label>USGSオルソ画像 不透明度: <span id="ortho-slider-opacity-value">100%</span></label>
+            <input id="ortho-slider-opacity" type="range" min="0" max="100" step="0" value="100">
+        </div>
+    </div>
     <script type="text/javascript">
         // マップの初期化
         const map = new maplibregl.Map({
             container: 'map',
-            // style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
-            style: {
-                version: 8,
-                sources: {
-                    'usgs-wmts-source': {
-                        'type': 'raster',
-                        'tiles': [
-                            'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/WMTS/tile/1.0.0/USGSImageryTopo/default/default028mm/{z}/{y}/{x}'
-                        ],
-                        'tileSize': 256,
-                        attribution: '<a href="https://basemap.nationalmap.gov/arcgis/rest/services">The National Map courtesy of the U.S. Geological Survey</a>'
-                    }
-                },
-                layers: [
-                    {
-                        'id': 'usgs-wmts-layer',
-                        'type': 'raster',
-                        'source': 'usgs-wmts-source'
-                    }
-                ]
-            },
+            style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
             center: [137.65, 37.02],
             zoom: 4.31,
             minZoom: 1,
@@ -301,6 +287,24 @@
         }
 
         map.on('load', function () {
+            // USGSオルソ画像タイルソースを追加
+            map.addSource("usgs-wmts-source", {
+                'type': 'raster',
+                'tiles': [
+                    'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/WMTS/tile/1.0.0/USGSImageryTopo/default/default028mm/{z}/{y}/{x}'
+                ],
+                'tileSize': 256,
+                attribution: '<a href="https://basemap.nationalmap.gov/arcgis/rest/services">The National Map courtesy of the U.S. Geological Survey</a>'
+
+            });
+
+            // USGSオルソ画像タイルレイヤの追加
+            map.addLayer({
+                'id': 'usgs-wmts-layer',
+                'type': 'raster',
+                'source': 'usgs-wmts-source'
+            });
+
             // 初期データのロード
             fetchAndAddDepthToUSGSData('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson', addDataToMap);
         });
@@ -311,14 +315,14 @@
                 map.removeSource('usgs-earthquake');
             }
 
-            // ソースを追加
+            // USGS地震情報ソースを追加
             map.addSource("usgs-earthquake", {
                 type: "geojson",
                 data: processedData,
                 attribution: '<a href="https://www.usgs.gov/programs/earthquake-hazards/earthquakes">Earthquakes courtesy of the U.S. Geological Survey</a>'
             });
 
-            // レイヤの追加
+            // USGS地震情報レイヤの追加
             map.addLayer({
                 'id': 'usgs-earthquake-points',
                 'type': 'circle',
@@ -364,7 +368,6 @@
                         9, 100
                     ]
                 }
-
             });
         }
 
@@ -374,6 +377,19 @@
             console.log(selectedUrl);
             fetchAndAddDepthToUSGSData(selectedUrl, addDataToMap);
         }
+
+        // スライダーでUSGSオルソ画像タイルの不透明度を制御
+        const orthosliderOpactiy = document.getElementById('ortho-slider-opacity');
+        const orthosliderOpactiyValue = document.getElementById('ortho-slider-opacity-value');
+
+        orthosliderOpactiy.addEventListener('input', (e) => {
+            map.setPaintProperty(
+                'usgs-wmts-layer',
+                'raster-opacity',
+                parseInt(e.target.value, 10) / 100
+            );
+            orthosliderOpactiyValue.textContent = e.target.value + '%';
+        });
 
         // クリック時のポップアップ表示
         map.on('click', 'usgs-earthquake-points', (e) => {
